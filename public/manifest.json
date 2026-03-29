@@ -1,0 +1,41 @@
+{
+  "name": "ReimburseFlow",
+  "short_name": "ReimburseFlow",
+  "description": "Enterprise-grade expense management with AI-powered approval workflows",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030306",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Expense",
+      "short_name": "New",
+      "url": "/expenses/new",
+      "icons": [{ "src": "/logo192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Pending Approvals",
+      "short_name": "Approvals",
+      "url": "/approvals",
+      "icons": [{ "src": "/logo192.png", "sizes": "192x192" }]
+    }
+  ],
+  "categories": ["business", "finance", "productivity"],
+  "screenshots": [],
+  "prefer_related_applications": false
+}

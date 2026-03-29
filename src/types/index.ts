@@ -21,7 +21,7 @@ export interface User {
 export interface ExpenseCategory {
   id: string;
   name: string;
-  icon: string;
+  icon?: string;
   description?: string;
   isActive: boolean;
 }

@@ -1,0 +1,43 @@
+name: ReimburseFlow CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20'
+        cache: 'npm'
+        
+    - name: Install Frontend Dependencies
+      run: npm ci
+      
+    - name: Ensure Frontend Builds
+      run: npm run build
+      
+    - name: Install Backend Dependencies
+      run: cd server && npm ci
+      
+    - name: Ensure Backend Builds
+      run: cd server && npm run build
+      
+  docker_publish:
+    needs: build_and_test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Docker Compose Validate
+      run: docker-compose config

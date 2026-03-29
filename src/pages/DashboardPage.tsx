@@ -1,190 +1,250 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { useAuth } from '@/contexts/AuthContext';
-import { StatCard } from '@/components/dashboard/StatCard';
-import { StatusBadge } from '@/components/expenses/StatusBadge';
-import { mockDashboardStats, mockExpenses } from '@/data/mockData';
-import { Receipt, Clock, CheckCircle2, XCircle, DollarSign, TrendingUp, ArrowRight } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell
+} from 'recharts';
+import { DollarSign, Clock, CheckCircle, TrendingUp, Plus, ArrowRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGetDashboardStatsQuery, useGetExpensesQuery } from '@/store';
+import { useGsapAmountCounter, useGsapCounter, useGsapFadeInStagger } from '@/hooks/useGsapAnimations';
+import { DashboardSkeleton } from '@/components/Skeletons';
+import { toast } from 'sonner';
 
-const COLORS = ['hsl(38 92% 50%)', 'hsl(152 60% 40%)', 'hsl(0 72% 51%)', 'hsl(200 80% 50%)', 'hsl(220 14% 80%)'];
+const ease = [0.22, 1, 0.36, 1] as const;
+const fadeUp = { hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0, transition: { duration: 0.8, ease } } };
+const COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#6366f1'];
 
-const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } };
-const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4 } } };
+const chartStyle = {
+  background: '#0a0a0a',
+  border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: '8px',
+  fontSize: '12px',
+  color: '#fff',
+  boxShadow: '0 10px 30px -10px rgba(0,0,0,0.5)'
+};
+
+const statusStyles: Record<string, string> = {
+  pending: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+  approved: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  rejected: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+  paid: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+  draft: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20',
+};
 
 const DashboardPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const stats = mockDashboardStats;
-  const isEmployee = user?.role === 'employee';
+  const { data: stats, isLoading } = useGetDashboardStatsQuery();
+  const { data: expensesData } = useGetExpensesQuery({ limit: 5 });
 
-  const relevantExpenses = isEmployee
-    ? mockExpenses.filter(e => e.employeeId === user?.id)
-    : mockExpenses;
+  const totalRef = useGsapCounter(stats?.totalExpenses || 0);
+  const pendingRef = useGsapCounter(stats?.pendingApprovals || 0);
+  const approvedRef = useGsapAmountCounter(stats?.approvedAmount || 0);
+  const avgRef = useGsapAmountCounter(stats?.averageExpense || 0);
+  const statsContainerRef = useGsapFadeInStagger('.stat-card');
 
-  const pendingExpenses = relevantExpenses.filter(e => e.status === 'pending');
+  if (isLoading || !stats) return <DashboardSkeleton />;
+
+  const recentExpenses = expensesData?.expenses || [];
+
+  const handleExportCSV = () => {
+    if (!recentExpenses.length) {
+      toast.error('No expenses to export.');
+      return;
+    }
+    const headers = ['ID', 'Date', 'Description', 'Amount', 'Status', 'Submitter'];
+    const rows = recentExpenses.map(exp => [
+      exp.id,
+      exp.expenseDate,
+      `"${exp.description.replace(/"/g, '""')}"`,
+      exp.amount,
+      exp.status,
+      exp.employeeName
+    ]);
+    
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `expense_report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    toast.success('Report exported successfully to CSV');
+  };
 
   return (
-    <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-8">
+    <motion.div initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.05 } } }} className="space-y-6">
       {/* Header */}
-      <motion.div variants={fadeUp} className="page-header">
-        <h1 className="page-title">
-          Welcome back, {user?.firstName} 👋
-        </h1>
-        <p className="page-description">
-          {isEmployee ? "Here's an overview of your expenses" : "Here's what's happening across the organization"}
-        </p>
+      <motion.div variants={fadeUp} className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight text-white mb-1">
+            Overview
+          </h1>
+          <p className="text-zinc-500 text-sm">Welcome back, {user?.firstName}. Here is what's happening today.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button onClick={handleExportCSV} variant="outline" className="border-white/10 text-white hover:bg-white/5 h-9 text-sm font-medium">
+            Export Report
+          </Button>
+          <Button onClick={() => navigate('/expenses/new')} className="bg-white text-black hover:bg-zinc-200 border-0 rounded-lg px-4 h-9 flex items-center gap-2 transition-all font-medium text-sm">
+            <Plus className="w-4 h-4" /> 
+            New Expense
+          </Button>
+        </div>
       </motion.div>
 
       {/* Stats Grid */}
-      <motion.div variants={fadeUp} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Expenses"
-          value={relevantExpenses.length}
-          icon={Receipt}
-          trend={{ value: 12, positive: true }}
-          gradient="var(--gradient-primary)"
-        />
-        <StatCard
-          title="Pending Approvals"
-          value={pendingExpenses.length}
-          icon={Clock}
-          subtitle="Awaiting review"
-          gradient="var(--gradient-warning)"
-        />
-        <StatCard
-          title="Approved Amount"
-          value={`$${stats.approvedAmount.toLocaleString()}`}
-          icon={CheckCircle2}
-          trend={{ value: 8, positive: true }}
-          gradient="var(--gradient-success)"
-        />
-        <StatCard
-          title={isEmployee ? 'Avg. Expense' : 'Rejected'}
-          value={isEmployee ? `$${stats.averageExpense.toFixed(0)}` : stats.rejectedCount}
-          icon={isEmployee ? DollarSign : XCircle}
-          gradient={isEmployee ? 'var(--gradient-primary)' : 'var(--gradient-danger)'}
-        />
-      </motion.div>
-
-      {/* Charts Row */}
-      <motion.div variants={fadeUp} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Monthly Trend */}
-        <div className="glass-card p-6 lg:col-span-2">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">Monthly Expense Trend</h3>
-              <p className="text-xs text-muted-foreground">Last 6 months</p>
+      <div ref={statsContainerRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Expenses', ref: totalRef, icon: DollarSign, sub: '+12% from last month' },
+          { label: 'Pending Approvals', ref: pendingRef, icon: Clock, sub: 'Needs your attention' },
+          { label: 'Approved Amount', ref: approvedRef, icon: CheckCircle, sub: 'Cleared this month' },
+          { label: 'Average Claim', ref: avgRef, icon: TrendingUp, sub: 'Per transaction' },
+        ].map((item, idx) => (
+          <div key={item.label} className="stat-card border border-white/5 bg-[#111] rounded-xl p-5 hover:bg-[#151515] transition-colors duration-300">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-medium text-zinc-400">{item.label}</p>
+              <item.icon className="w-4 h-4 text-zinc-500" />
             </div>
-            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+            <div className="text-2xl font-semibold text-white tracking-tight mb-1">
+              <span ref={item.ref}>0</span>
+            </div>
+            <p className="text-xs text-zinc-500">
+              {item.sub}
+            </p>
           </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={stats.monthlyTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="month" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
-              <YAxis tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
-              <Tooltip
-                contentStyle={{
-                  background: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                }}
-              />
-              <Bar dataKey="amount" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+        ))}
+      </div>
+
+      {/* Charts Box */}
+      <motion.div 
+        initial="hidden" 
+        whileInView="show" 
+        viewport={{ once: true, margin: "-50px" }} 
+        variants={fadeUp} 
+        className="grid grid-cols-1 lg:grid-cols-3 gap-4"
+      >
+        <div className="lg:col-span-2 border border-white/5 bg-[#111] rounded-xl p-6 relative overflow-hidden group">
+          <motion.div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
+          <div className="flex items-center justify-between mb-6 relative z-10">
+            <div>
+              <h3 className="text-sm font-medium text-white">Expense Trend</h3>
+              <p className="text-xs text-zinc-500">Six month trailing</p>
+            </div>
+          </div>
+          <div className="h-[260px] w-full relative z-10">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={stats.monthlyTrend} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorAmt" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="month" tick={{ fill: '#71717a', fontSize: 11 }} axisLine={false} tickLine={false} dy={10} />
+                <YAxis tick={{ fill: '#71717a', fontSize: 11 }} axisLine={false} tickLine={false} dx={-10} />
+                <Tooltip contentStyle={chartStyle} cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }} />
+                <Area type="monotone" dataKey="amount" stroke="#8b5cf6" fill="url(#colorAmt)" strokeWidth={3} activeDot={{ r: 6, fill: '#fff', stroke: '#8b5cf6', strokeWidth: 2 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        {/* Status Distribution */}
-        <div className="glass-card p-6">
-          <h3 className="text-sm font-semibold text-foreground mb-6">Status Distribution</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={stats.statusDistribution} dataKey="count" nameKey="status" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4}>
-                {stats.statusDistribution.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex flex-wrap gap-3 mt-2">
-            {stats.statusDistribution.map((item, i) => (
-              <div key={item.status} className="flex items-center gap-1.5 text-xs">
-                <div className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                <span className="text-muted-foreground">{item.status} ({item.count})</span>
-              </div>
-            ))}
+        <div className="border border-white/5 bg-[#111] rounded-xl p-6 flex flex-col relative overflow-hidden group">
+          <motion.div className="absolute inset-0 bg-gradient-to-tr from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
+          <h3 className="text-sm font-medium text-white mb-1 relative z-10">By Category</h3>
+          <p className="text-xs text-zinc-500 mb-6 relative z-10">Distribution breakdown</p>
+          <div className="flex-1 flex flex-col items-center justify-center relative z-10">
+            <div className="h-[180px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie 
+                    data={stats.categoryBreakdown} 
+                    dataKey="amount" 
+                    nameKey="category" 
+                    cx="50%" cy="50%" 
+                    innerRadius={60} 
+                    outerRadius={80} 
+                    paddingAngle={4}
+                    stroke="rgba(0,0,0,0.5)"
+                    strokeWidth={2}
+                  >
+                    {stats.categoryBreakdown.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip contentStyle={chartStyle} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            
+            <div className="w-full space-y-2.5 mt-4">
+              {stats.categoryBreakdown.slice(0, 3).map((c, i) => (
+                <div key={c.category} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
+                    <span className="text-zinc-400">{c.category}</span>
+                  </div>
+                  <span className="text-white font-medium">{c.percentage}%</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </motion.div>
 
-      {/* Recent Expenses */}
-      <motion.div variants={fadeUp} className="glass-card">
-        <div className="flex items-center justify-between p-6 pb-4">
-          <h3 className="text-sm font-semibold text-foreground">Recent Expenses</h3>
-          <button onClick={() => navigate('/expenses')} className="text-xs text-primary hover:underline flex items-center gap-1">
-            View all <ArrowRight className="w-3 h-3" />
-          </button>
+      {/* Activity Stream */}
+      <motion.div initial="hidden" whileInView="show" viewport={{ once: true, margin: "-50px" }} variants={fadeUp} className="border border-white/5 bg-[#111] rounded-xl overflow-hidden mt-6">
+        <div className="flex items-center justify-between p-6 border-b border-white/5">
+          <h3 className="text-sm font-medium text-white">Recent Activity</h3>
+          <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white h-8 text-xs font-medium" onClick={() => navigate('/expenses')}>
+            View all
+          </Button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-t border-border">
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground">Description</th>
-                {!isEmployee && <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground">Employee</th>}
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground">Category</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground">Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground">Date</th>
+              <tr className="border-b border-white/5">
+                {['Submitter', 'Description', 'Amount', 'Status', 'Date'].map(h => (
+                  <th key={h} className="px-6 py-3 text-left text-[11px] font-medium text-zinc-500 uppercase tracking-wider">{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody>
-              {relevantExpenses.slice(0, 5).map(expense => (
-                <tr key={expense.id} className="border-t border-border/50 hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => navigate(`/expenses/${expense.id}`)}>
-                  <td className="px-6 py-3.5">
-                    <p className="text-sm font-medium text-foreground">{expense.description}</p>
-                    <p className="text-xs text-muted-foreground">{expense.merchantName}</p>
+            <tbody className="divide-y divide-white/5">
+              {recentExpenses.map((exp) => (
+                <tr 
+                  key={exp.id} 
+                  className="hover:bg-white/[0.04] transition-colors cursor-pointer group" 
+                  onClick={() => navigate(`/expenses/${exp.id}`)}
+                >
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-medium text-zinc-300 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-colors">
+                        {exp.employeeName.charAt(0)}
+                      </div>
+                      <span className="text-sm font-medium text-zinc-200">{exp.employeeName}</span>
+                    </div>
                   </td>
-                  {!isEmployee && <td className="px-6 py-3.5 text-sm text-foreground">{expense.employeeName}</td>}
-                  <td className="px-6 py-3.5 text-sm text-muted-foreground">{expense.categoryName}</td>
-                  <td className="px-6 py-3.5 text-sm font-semibold text-foreground text-right">
-                    ${expense.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  <td className="px-6 py-4 text-sm text-zinc-400 truncate max-w-[250px] group-hover:text-zinc-300 transition-colors">{exp.description}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-white">
+                    ${Number(exp.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="px-6 py-3.5"><StatusBadge status={expense.status} /></td>
-                  <td className="px-6 py-3.5 text-sm text-muted-foreground">{expense.expenseDate}</td>
+                  <td className="px-6 py-4">
+                    <Badge variant="outline" className={`${statusStyles[exp.status]} px-2 py-0.5 text-[10px] uppercase font-medium border-0 bg-transparent p-0 relative`}>
+                      <span className={`w-1.5 h-1.5 rounded-full mr-1.5 inline-block animate-pulse duration-[3000ms] ${exp.status === 'pending' ? 'bg-amber-500' : exp.status === 'approved' ? 'bg-emerald-500' : exp.status === 'rejected' ? 'bg-rose-500' : 'bg-zinc-500'}`} />
+                      {exp.status}
+                    </Badge>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-zinc-500 group-hover:text-zinc-400 transition-colors flex items-center gap-2">
+                    {new Date(exp.expenseDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric'})}
+                    <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      </motion.div>
-
-      {/* Recent Activity */}
-      <motion.div variants={fadeUp} className="glass-card p-6">
-        <h3 className="text-sm font-semibold text-foreground mb-4">Recent Activity</h3>
-        <div className="space-y-4">
-          {stats.recentActivity.slice(0, 4).map((activity, i) => (
-            <motion.div
-              key={activity.id}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="flex items-start gap-3"
-            >
-              <div className={`w-2 h-2 rounded-full mt-1.5 ${
-                activity.type === 'expense_approved' ? 'bg-success' :
-                activity.type === 'expense_rejected' ? 'bg-destructive' :
-                'bg-primary'
-              }`} />
-              <div>
-                <p className="text-sm text-foreground">{activity.description}</p>
-                <p className="text-xs text-muted-foreground">{new Date(activity.timestamp).toLocaleDateString()}</p>
-              </div>
-            </motion.div>
-          ))}
         </div>
       </motion.div>
     </motion.div>

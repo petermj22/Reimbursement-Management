@@ -1,17 +1,52 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { mockExpenses } from '@/data/mockData';
-import { StatusBadge } from '@/components/expenses/StatusBadge';
+import { CheckCircle, XCircle, Clock, Eye, DollarSign, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, XCircle, Clock, Eye, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { useGetExpensesQuery, useApproveExpenseMutation, useRejectExpenseMutation } from '@/store';
+import { CardSkeleton } from '@/components/Skeletons';
+import { RoleEmptyState } from '@/components/EmptyStates';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
 const ApprovalsPage: React.FC = () => {
   const navigate = useNavigate();
-  const pendingExpenses = mockExpenses.filter(e => e.status === 'pending');
+  const { data, isLoading } = useGetExpensesQuery({ status: 'pending', limit: 50 });
+  const [approveExpense, { isLoading: approving }] = useApproveExpenseMutation();
+  const [rejectExpense, { isLoading: rejecting }] = useRejectExpenseMutation();
+
+  const pendingExpenses = data?.expenses || [];
+
+  const handleApprove = async (id: string) => {
+    try {
+      await approveExpense({ id, comments: 'Approved' }).unwrap();
+      toast.success('Expense approved!');
+    } catch (err: unknown) {
+      toast.error('Approval failed');
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    try {
+      await rejectExpense({ id, comments: 'Does not meet policy requirements' }).unwrap();
+      toast.success('Expense rejected');
+    } catch (err: unknown) {
+      toast.error('Rejection failed');
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div><h1 className="page-title">Pending Approvals</h1></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[...Array(4)].map((_, i) => <CardSkeleton key={i} />)}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <motion.div initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.08 } } }} className="space-y-6">
@@ -20,78 +55,105 @@ const ApprovalsPage: React.FC = () => {
         <p className="page-description">{pendingExpenses.length} expenses awaiting your review</p>
       </motion.div>
 
-      <motion.div variants={fadeUp} className="space-y-4">
-        {pendingExpenses.map((expense, i) => (
+      {/* Stats */}
+      <motion.div variants={fadeUp} className="grid grid-cols-3 gap-4">
+        <div className="stat-card">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-warning" />
+            <span className="text-xs text-muted-foreground">Pending</span>
+          </div>
+          <p className="text-xl font-bold mt-1 text-foreground">{pendingExpenses.length}</p>
+        </div>
+        <div className="stat-card">
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-primary" />
+            <span className="text-xs text-muted-foreground">Total Value</span>
+          </div>
+          <p className="text-xl font-bold mt-1 text-foreground">
+            ${pendingExpenses.reduce((s, e) => s + Number(e.amount), 0).toLocaleString()}
+          </p>
+        </div>
+        <div className="stat-card">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-info" />
+            <span className="text-xs text-muted-foreground">Avg. Amount</span>
+          </div>
+          <p className="text-xl font-bold mt-1 text-foreground">
+            ${pendingExpenses.length ? Math.round(pendingExpenses.reduce((s, e) => s + Number(e.amount), 0) / pendingExpenses.length).toLocaleString() : 0}
+          </p>
+        </div>
+      </motion.div>
+
+      {/* Cards */}
+      <motion.div variants={fadeUp} className="grid grid-cols-1 gap-4">
+        {pendingExpenses.map((exp, i) => (
           <motion.div
-            key={expense.id}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className="glass-card p-6"
+            key={exp.id}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: i * 0.05 }}
+            className="relative w-full rounded-2xl overflow-hidden"
           >
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                  {expense.employeeName.split(' ').map(n => n[0]).join('')}
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">{expense.description}</h3>
-                  <p className="text-xs text-muted-foreground">{expense.employeeName} · {expense.merchantName}</p>
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs text-muted-foreground">{expense.categoryName}</span>
-                    <span className="text-xs text-muted-foreground">·</span>
-                    <span className="text-xs text-muted-foreground">{expense.expenseDate}</span>
-                    {expense.isOcrProcessed && (
-                      <>
-                        <span className="text-xs text-muted-foreground">·</span>
-                        <span className="text-xs text-success">OCR {expense.ocrConfidence?.toFixed(0)}%</span>
-                      </>
-                    )}
-                  </div>
-                </div>
+            {/* Background Action Indicators (Behind the Card) */}
+            <div className="absolute inset-0 flex items-center justify-between px-8 rounded-2xl">
+              <div className="flex items-center gap-2 text-red-500 font-bold opacity-80">
+                <XCircle className="w-6 h-6" /> Reject
               </div>
-              <div className="text-right">
-                <p className="text-lg font-bold text-foreground">${expense.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-muted-foreground">{expense.currency}</p>
+              <div className="flex items-center gap-2 text-green-500 font-bold opacity-80">
+                Approve <CheckCircle className="w-6 h-6" />
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-4 border-t border-border/50">
+            {/* The Draggable Card */}
+            <motion.div
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.8}
+              onDragEnd={(event, info) => {
+                const swipeThreshold = 100;
+                if (info.offset.x > swipeThreshold) {
+                  // Swiped right -> Approve
+                  handleApprove(exp.id);
+                } else if (info.offset.x < -swipeThreshold) {
+                  // Swiped left -> Reject
+                  handleReject(exp.id);
+                }
+              }}
+              whileTap={{ cursor: 'grabbing', scale: 0.98 }}
+              className="glass-card p-5 flex flex-col gap-3 relative z-10 bg-[#0a0a0a]/90 backdrop-blur-xl border border-white/10 cursor-grab will-change-transform shadow-xl"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{exp.description}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{exp.employeeName} · {exp.categoryName}</p>
+                </div>
+                <span className="text-lg font-bold text-foreground">${Number(exp.amount).toLocaleString()}</span>
+              </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Clock className="w-3 h-3" />
-                Step {expense.currentApprovalStep + 1} of {expense.totalApprovalSteps}
+                <Badge variant="outline" className="text-xs">{exp.currency}</Badge>
+                <span>{new Date(exp.expenseDate).toLocaleDateString()}</span>
+                {exp.merchantName && <span>· {exp.merchantName}</span>}
               </div>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={() => navigate(`/expenses/${expense.id}`)}>
-                  <Eye className="w-3.5 h-3.5 mr-1" /> View
+              <div className="flex gap-2 mt-auto pt-2">
+                <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => navigate(`/expenses/${exp.id}`)}>
+                  <Eye className="w-3 h-3" /> View Detail
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-destructive/30 text-destructive hover:bg-destructive/10"
-                  onClick={() => toast.error('Expense rejected')}
-                >
-                  <XCircle className="w-3.5 h-3.5 mr-1" /> Reject
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => toast.success('Expense approved!')}
-                  style={{ background: 'var(--gradient-success)' }}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve
-                </Button>
+                <div className="hidden sm:flex flex-1 items-center justify-center text-xs text-zinc-500 opacity-60">
+                  <motion.span animate={{ x: [-5, 5, -5] }} transition={{ repeat: Infinity, duration: 2 }}>←</motion.span>
+                  <span className="mx-2">Swipe to Act</span>
+                  <motion.span animate={{ x: [5, -5, 5] }} transition={{ repeat: Infinity, duration: 2 }}>→</motion.span>
+                </div>
               </div>
-            </div>
+            </motion.div>
           </motion.div>
         ))}
-
-        {pendingExpenses.length === 0 && (
-          <div className="glass-card p-16 text-center">
-            <CheckCircle2 className="w-12 h-12 text-success mx-auto mb-4 opacity-50" />
-            <p className="text-sm text-muted-foreground">All caught up! No pending approvals.</p>
-          </div>
-        )}
       </motion.div>
+
+      {pendingExpenses.length === 0 && (
+        <motion.div variants={fadeUp} className="glass-card">
+          <RoleEmptyState entity="approvals" />
+        </motion.div>
+      )}
     </motion.div>
   );
 };
