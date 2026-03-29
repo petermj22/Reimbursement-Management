@@ -9,24 +9,36 @@ import { emitExpenseSubmitted } from './socketService.js';
 // Fallback to memory if Redis is not available
 const connection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
+  lazyConnect: true,
   retryStrategy(times) {
     if (times > 3) {
-      logger.warn('Redis unreachable. Falling back to in-memory processing for queues.');
+      logger.warn('Redis unreachable after 3 attempts. Falling back to in-memory processing for queues.');
       return null;
     }
-    return Math.min(times * 50, 2000);
+    return Math.min(times * 100, 2000);
   },
 });
 
 let useMemoryFallback = false;
+
 connection.on('error', (err: any) => {
-  if (err.code === 'ECONNREFUSED') {
+  if (!useMemoryFallback) {
+    logger.warn('Redis error encountered. Subsequent operations will use in-memory fallback.', { 
+      error: err.message || 'Unknown Redis error' 
+    });
     useMemoryFallback = true;
   }
 });
 
+// Suppress unhandled rejections for the connection itself
+connection.on('connect', () => {
+  logger.info('✅ Connected to Redis successfully');
+  useMemoryFallback = false;
+});
+
 // 1. Email Queue
 export const emailQueue = new Queue('email-queue', { connection });
+emailQueue.on('error', (err) => logger.warn('Email Queue Redis connection error', { error: err.message }));
 const emailWorker = new Worker(
   'email-queue',
   async (job: Job) => {
@@ -40,6 +52,7 @@ emailWorker.on('failed', (job, err) => logger.error(`Email job ${job?.id} failed
 
 // 2. OCR Queue
 export const ocrQueue = new Queue('ocr-queue', { connection });
+ocrQueue.on('error', (err) => logger.warn('OCR Queue Redis connection error', { error: err.message }));
 const ocrWorker = new Worker(
   'ocr-queue',
   async (job: Job) => {
